@@ -1,0 +1,10 @@
+# Test configuration - disable TLS for MockMvc tests
+server:
+  port: 8080
+  ssl:
+    enabled: false
+
+logging:
+  level:
+    com.example.securechannel: DEBUG
+

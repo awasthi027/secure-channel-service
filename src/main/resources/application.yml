@@ -1,0 +1,20 @@
+server:
+  port: 8443
+  ssl:
+    enabled: true
+    protocol: TLS
+    enabled-protocols: TLSv1.3
+    key-store: classpath:certs/server.p12
+    key-store-type: PKCS12
+    key-store-password: server-secret
+    key-alias: server
+    key-password: server-secret
+    trust-store: classpath:certs/server-truststore.p12
+    trust-store-type: PKCS12
+    trust-store-password: truststore-secret
+    client-auth: need
+
+logging:
+  level:
+    com.example.securechannel: DEBUG
+

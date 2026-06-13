@@ -1,0 +1,9 @@
+package com.example.securechannel.exception;
+
+public class UnauthorizedException extends RuntimeException {
+
+    public UnauthorizedException(String message) {
+        super(message);
+    }
+}
+
