@@ -1,0 +1,16 @@
+.git
+.gitignore
+.idea
+*.iml
+.DS_Store
+
+# Build outputs
+target
+
+# Local env files
+.env
+.env.*
+
+# Docs and editor metadata not required in image build context
+README.md
+
