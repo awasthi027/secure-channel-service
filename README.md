@@ -16,7 +16,9 @@ Spring Boot service that enforces secure-channel-first communication.
 - Java 21
 - Spring Boot 3.3
 - Maven
-- In-memory stores (`ConcurrentHashMap`) for demo use
+- **PostgreSQL** (Spring Data JPA) for persistent storage
+- Neon PostgreSQL support for Railway deployment
+- H2 for test environment
 
 ## Configure registered devices
 
@@ -28,6 +30,31 @@ secure:
     - device-id: device-123
       device-type: MOBILE
 ```
+
+## PostgreSQL Configuration
+
+This service now uses PostgreSQL for persistent storage of:
+- ECDH handshake records and session data
+- Article information
+
+### For local development:
+
+```bash
+export SPRING_DATASOURCE_URL="jdbc:postgresql://localhost:5432/securedb"
+export SPRING_DATASOURCE_USERNAME="postgres"
+export SPRING_DATASOURCE_PASSWORD="postgres"
+```
+
+### For Neon PostgreSQL (Railway):
+
+```bash
+# Convert Neon connection string to JDBC format
+export SPRING_DATASOURCE_URL="jdbc:postgresql://user:pass@host/db?sslmode=require&channel_binding=require"
+export SPRING_DATASOURCE_USERNAME="user"
+export SPRING_DATASOURCE_PASSWORD="pass"
+```
+
+See `DATABASE_README.md` and `POSTGRES_MIGRATION.md` for detailed configuration and migration information.
 
 ## Build and run
 

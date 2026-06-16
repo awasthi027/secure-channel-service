@@ -2,14 +2,19 @@ package com.example.securechannel.service;
 
 import com.example.securechannel.api.EcdhConfirmRequest;
 import com.example.securechannel.api.EcdhInitRequest;
+import com.example.securechannel.entity.EcdhHandshakeEntity;
+import com.example.securechannel.entity.EcdhHandshakeEntity.HandshakeStatus;
 import com.example.securechannel.exception.BadRequestException;
 import com.example.securechannel.exception.UnauthorizedException;
 import com.example.securechannel.model.EcdhHandshakeRecord;
+import com.example.securechannel.repository.EcdhHandshakeRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.PublicKey;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
@@ -29,11 +34,12 @@ public class EcdhHandshakeService {
     private static final Duration REQUEST_SKEW_TOLERANCE = Duration.ofSeconds(30);
     private static final Duration NONCE_RETENTION = Duration.ofMinutes(3);
 
-    private final Map<String, EcdhHandshakeRecord> pending = new ConcurrentHashMap<>();
     private final Map<String, ActiveSessionState> active = new ConcurrentHashMap<>();
+    private final EcdhHandshakeRepository ecdhHandshakeRepository;
     private final CryptoService cryptoService;
 
-    public EcdhHandshakeService(CryptoService cryptoService) {
+    public EcdhHandshakeService(EcdhHandshakeRepository ecdhHandshakeRepository, CryptoService cryptoService) {
+        this.ecdhHandshakeRepository = ecdhHandshakeRepository;
         this.cryptoService = cryptoService;
     }
 
@@ -64,19 +70,24 @@ public class EcdhHandshakeService {
         String serverProof = cryptoService.signCanonical(keys.hmacKeyB64(), transcriptStr);
 
         Instant now = Instant.now();
-        pending.put(sessionId, new EcdhHandshakeRecord(
-                sessionId,
-                request.deviceId(),
-                request.clientPublicKey(),
-                serverPublicKeyB64,
-                request.clientNonce(),
-                serverNonceB64,
-                transcriptStr,
-                keys.hmacKeyB64(),
-                now,
-                now.plus(SESSION_TTL),
-                now.plus(ROTATE_AFTER),
-                now));
+        OffsetDateTime nowOdt = OffsetDateTime.ofInstant(now, ZoneOffset.UTC);
+
+        EcdhHandshakeEntity entity = new EcdhHandshakeEntity();
+        entity.setSessionId(sessionId);
+        entity.setDeviceId(request.deviceId());
+        entity.setClientPublicKey(request.clientPublicKey());
+        entity.setServerPublicKey(serverPublicKeyB64);
+        entity.setClientNonce(request.clientNonce());
+        entity.setServerNonce(serverNonceB64);
+        entity.setTranscript(transcriptStr);
+        entity.setDerivedHmacKeyB64(keys.hmacKeyB64());
+        entity.setStatus(HandshakeStatus.PENDING);
+        entity.setCreatedAt(nowOdt);
+        entity.setExpiresAt(nowOdt.plus(SESSION_TTL));
+        entity.setRotateAfter(nowOdt.plus(ROTATE_AFTER));
+        entity.setLastActivityAt(nowOdt);
+
+        ecdhHandshakeRepository.save(entity);
 
         LOGGER.info("event=ecdh_init sessionTag={} deviceId={}",
                 redactSessionId(sessionId), request.deviceId());
@@ -92,37 +103,28 @@ public class EcdhHandshakeService {
     }
 
     public ConfirmResult confirm(EcdhConfirmRequest request) {
-        EcdhHandshakeRecord record = pending.get(request.sessionId());
-        if (record == null) {
-            throw new BadRequestException("ECDH handshake not found or expired");
+        EcdhHandshakeEntity entity = ecdhHandshakeRepository.findById(request.sessionId())
+                .orElseThrow(() -> new BadRequestException("ECDH handshake not found or expired"));
+
+        if (!entity.getStatus().equals(HandshakeStatus.PENDING)) {
+            throw new BadRequestException("Handshake is not in PENDING state");
         }
 
-        String expectedProof = cryptoService.signCanonical(record.derivedHmacKeyB64(), record.transcript() + "\nclient-finish");
+        String expectedProof = cryptoService.signCanonical(entity.getDerivedHmacKeyB64(), entity.getTranscript() + "\nclient-finish");
         if (!cryptoService.constantTimeEquals(expectedProof, request.clientProof())) {
             throw new UnauthorizedException("Invalid client handshake proof");
         }
 
-        Instant now = Instant.now();
-        EcdhHandshakeRecord activated = new EcdhHandshakeRecord(
-                record.sessionId(),
-                record.deviceId(),
-                record.clientPublicKey(),
-                record.serverPublicKey(),
-                record.clientNonce(),
-                record.serverNonce(),
-                record.transcript(),
-                record.derivedHmacKeyB64(),
-                record.createdAt(),
-                record.expiresAt(),
-                record.rotateAfter(),
-                now);
+        OffsetDateTime nowOdt = OffsetDateTime.now();
+        entity.setStatus(HandshakeStatus.ACTIVE);
+        entity.setLastActivityAt(nowOdt);
+        ecdhHandshakeRepository.save(entity);
 
-        active.put(request.sessionId(), new ActiveSessionState(activated));
-        pending.remove(request.sessionId());
+        active.put(request.sessionId(), new ActiveSessionState(toModel(entity)));
 
         LOGGER.info("event=ecdh_confirmed sessionTag={}", redactSessionId(request.sessionId()));
 
-        return new ConfirmResult(request.sessionId(), "ACTIVE", record.derivedHmacKeyB64());
+        return new ConfirmResult(request.sessionId(), "ACTIVE", entity.getDerivedHmacKeyB64());
     }
 
     public EcdhHandshakeRecord getActive(String sessionId) {
@@ -195,19 +197,12 @@ public class EcdhHandshakeService {
 
         state.registerNonce(nonce, now);
 
-        EcdhHandshakeRecord refreshed = new EcdhHandshakeRecord(
-                record.sessionId(),
-                record.deviceId(),
-                record.clientPublicKey(),
-                record.serverPublicKey(),
-                record.clientNonce(),
-                record.serverNonce(),
-                record.transcript(),
-                record.derivedHmacKeyB64(),
-                record.createdAt(),
-                record.expiresAt(),
-                record.rotateAfter(),
-                now);
+        EcdhHandshakeEntity entity = ecdhHandshakeRepository.findById(sessionId)
+                .orElseThrow(() -> new UnauthorizedException("Session not found"));
+        entity.setLastActivityAt(OffsetDateTime.ofInstant(now, ZoneOffset.UTC));
+        ecdhHandshakeRepository.save(entity);
+
+        EcdhHandshakeRecord refreshed = toModel(entity);
         state.record(refreshed);
         return refreshed;
     }
@@ -232,6 +227,11 @@ public class EcdhHandshakeService {
     private EcdhHandshakeRecord enforceLifecycle(String sessionId, EcdhHandshakeRecord record, Instant now) {
         if (now.isAfter(record.expiresAt())) {
             active.remove(sessionId);
+            EcdhHandshakeEntity entity = ecdhHandshakeRepository.findById(sessionId).orElse(null);
+            if (entity != null) {
+                entity.setStatus(HandshakeStatus.EXPIRED);
+                ecdhHandshakeRepository.save(entity);
+            }
             throw new UnauthorizedException("Session expired. Start a new handshake");
         }
         if (now.isAfter(record.lastActivityAt().plus(INACTIVITY_TIMEOUT))) {
@@ -252,6 +252,22 @@ public class EcdhHandshakeService {
 
     public String sessionTagForLogs(String sessionId) {
         return redactSessionId(sessionId);
+    }
+
+    private EcdhHandshakeRecord toModel(EcdhHandshakeEntity entity) {
+        return new EcdhHandshakeRecord(
+                entity.getSessionId(),
+                entity.getDeviceId(),
+                entity.getClientPublicKey(),
+                entity.getServerPublicKey(),
+                entity.getClientNonce(),
+                entity.getServerNonce(),
+                entity.getTranscript(),
+                entity.getDerivedHmacKeyB64(),
+                entity.getCreatedAt().toInstant(),
+                entity.getExpiresAt().toInstant(),
+                entity.getRotateAfter().toInstant(),
+                entity.getLastActivityAt().toInstant());
     }
 
     private static final class ActiveSessionState {
