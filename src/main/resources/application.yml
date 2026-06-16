@@ -1,7 +1,8 @@
 server:
-  port: 8443
+  port: ${PORT:8443}
+  forward-headers-strategy: framework
   ssl:
-    enabled: true
+    enabled: ${SERVER_SSL_ENABLED:true}
     protocol: TLS
     enabled-protocols: TLSv1.3
     key-store: classpath:certs/server.p12
@@ -12,7 +13,12 @@ server:
     trust-store: classpath:certs/server-truststore.p12
     trust-store-type: PKCS12
     trust-store-password: truststore-secret
-    client-auth: need
+    client-auth: ${SERVER_SSL_CLIENT_AUTH:need}
+
+secure:
+  client-identity:
+    mode: ${SECURE_CLIENT_IDENTITY_MODE:mtls}
+    header-name: ${SECURE_CLIENT_IDENTITY_HEADER:X-Device-Id}
 
 logging:
   level:

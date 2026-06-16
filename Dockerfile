@@ -22,7 +22,10 @@ USER spring:spring
 
 COPY --from=build /workspace/target/*.jar /app/app.jar
 
-EXPOSE 8443
+EXPOSE 8080
+ENV SERVER_SSL_ENABLED=false
+ENV SECURE_CLIENT_IDENTITY_MODE=header
+ENV SECURE_CLIENT_IDENTITY_HEADER=X-Device-Id
 ENV JAVA_OPTS="-XX:MaxRAMPercentage=75 -XX:+UseG1GC"
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Dserver.port=${PORT:-8443} -jar /app/app.jar"]
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Dserver.port=${PORT:-8080} -jar /app/app.jar"]
 

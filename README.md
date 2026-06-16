@@ -35,6 +35,27 @@ secure:
 mvn spring-boot:run
 ```
 
+## Railway deployment
+
+This service supports two transport modes:
+
+- **Local/dev mode**: direct TLS + mTLS on `https://localhost:8443`
+- **Railway mode**: Railway terminates TLS at the edge and forwards plain HTTP to the container
+
+The included `Dockerfile` is preconfigured for Railway by setting:
+
+- `SERVER_SSL_ENABLED=false`
+- `SECURE_CLIENT_IDENTITY_MODE=header`
+- `SECURE_CLIENT_IDENTITY_HEADER=X-Device-Id`
+
+In Railway mode, clients must:
+
+- call the public HTTPS URL, for example `https://secure-channel-service-production.up.railway.app`
+- send `X-Device-Id` on `POST /ecdh/init`
+- send `X-Device-Id` on protected API calls alongside the existing signed headers
+
+Local mTLS clients should continue using the localhost HTTPS URL and client certificates.
+
 ## API overview
 
 ### Secure channel APIs

@@ -147,7 +147,7 @@ class ChannelStatusControllerTest {
         @Bean
         @Primary
         ClientCertificateExtractor certificateExtractorStub() {
-            return new ClientCertificateExtractor() {
+            return new ClientCertificateExtractor("mtls", "X-Device-Id") {
                 @Override
                 public String extractDeviceIdFromCertificate(HttpServletRequest request) {
                     return DEVICE_ID;

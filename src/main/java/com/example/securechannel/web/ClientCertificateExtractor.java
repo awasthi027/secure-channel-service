@@ -3,6 +3,7 @@ package com.example.securechannel.web;
 import com.example.securechannel.exception.UnauthorizedException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.security.cert.X509Certificate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -10,12 +11,26 @@ public class ClientCertificateExtractor {
 
     private static final String CERT_ATTR = "jakarta.servlet.request.X509Certificate";
 
+    private final String identityMode;
+    private final String identityHeaderName;
+
+    public ClientCertificateExtractor(
+            @Value("${secure.client-identity.mode:mtls}") String identityMode,
+            @Value("${secure.client-identity.header-name:X-Device-Id}") String identityHeaderName) {
+        this.identityMode = identityMode;
+        this.identityHeaderName = identityHeaderName;
+    }
+
     /**
      * Extracts the Common Name (CN) from the verified client certificate.
      * This is populated by Tomcat after a successful mTLS handshake when
      * server.ssl.client-auth=need is configured.
      */
     public String extractDeviceIdFromCertificate(HttpServletRequest request) {
+        if ("header".equalsIgnoreCase(identityMode)) {
+            return extractDeviceIdFromHeader(request);
+        }
+
         X509Certificate[] certs = (X509Certificate[]) request.getAttribute(CERT_ATTR);
 
         if (certs == null || certs.length == 0) {
@@ -26,6 +41,14 @@ public class ClientCertificateExtractor {
         String dn = clientCert.getSubjectX500Principal().getName();
 
         return extractCn(dn);
+    }
+
+    private String extractDeviceIdFromHeader(HttpServletRequest request) {
+        String deviceId = request.getHeader(identityHeaderName);
+        if (deviceId == null || deviceId.isBlank()) {
+            throw new UnauthorizedException("Missing required device identity header: " + identityHeaderName);
+        }
+        return deviceId.trim();
     }
 
     /**
