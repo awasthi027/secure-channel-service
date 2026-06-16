@@ -80,7 +80,14 @@ if baseURL.contains("localhost") {
 urlRequest.setValue(deviceId, forHTTPHeaderField: deviceIdentityHeader)
 ```
 
-#### Request Headers on Railway
+> **Important for iOS / `URLSession`:** In Railway mode you should expect only
+> `NSURLAuthenticationMethodServerTrust`. You will **not** receive a
+> `NSURLAuthenticationMethodClientCertificate` challenge because Railway
+> terminates TLS at the edge before the request reaches your Spring Boot app.
+> The client certificate challenge only appears when the app server itself is
+> doing the TLS handshake, such as local `https://localhost:8443` with
+> `server.ssl.client-auth=need`.
+
 
 **POST `/ecdh/init`** (and all protected APIs):
 ```http
@@ -236,6 +243,24 @@ request.setValue(environment.deviceId, forHTTPHeaderField: "X-Device-Id")
 **Fix:** Match the deployment mode:
 - **Local:** Use `https://localhost:8443` with mTLS certificates
 - **Railway:** Use `https://secure-channel-service-production.up.railway.app` with `X-Device-Id` header
+
+### "I only get `NSURLAuthenticationMethodServerTrust` and never a client certificate challenge"
+
+**Cause:** The connection is going through Railway edge TLS, so the TLS session is
+between the app and Railway's public endpoint, not directly between the app and
+your Spring Boot container.
+
+**This is expected in Railway header mode.** The service is configured for that
+mode by the `Dockerfile` defaults:
+
+- `SERVER_SSL_ENABLED=false`
+- `SECURE_CLIENT_IDENTITY_MODE=header`
+
+**What to do:**
+- If deploying on Railway public HTTPS, keep the client on the header-based flow
+  and send `X-Device-Id`.
+- If you require true mTLS in production, deploy behind infrastructure that
+  supports TLS passthrough or verified client-cert forwarding to your app.
 
 ---
 

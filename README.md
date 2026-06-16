@@ -83,6 +83,11 @@ In Railway mode, clients must:
 
 Local mTLS clients should continue using the localhost HTTPS URL and client certificates.
 
+For iOS clients using `URLSession`:
+
+- **Local mTLS mode** (`https://localhost:8443`): expect both server trust handling and a client-certificate challenge.
+- **Railway mode** (public Railway HTTPS URL): expect **only** server trust handling. Railway terminates TLS at the edge, so the app will not trigger a client-certificate challenge.
+
 ## API overview
 
 ### Secure channel APIs
